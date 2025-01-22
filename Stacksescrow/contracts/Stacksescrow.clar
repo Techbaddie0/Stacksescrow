@@ -8,6 +8,9 @@
 (define-constant err-trade-not-found (err u103))
 (define-constant err-invalid-state (err u104))
 (define-constant err-unauthorized (err u105))
+(define-constant err-invalid-buyer (err u108))
+(define-constant err-invalid-description (err u109))
+(define-constant err-invalid-collector (err u110))
 
 ;; Status constants as fixed-length strings
 (define-constant STATUS-PENDING "pending")
@@ -59,7 +62,11 @@
             (fee-amount (/ (* amount (var-get escrow-fee)) u100))
             (current-height (get-block-height))
         )
+        ;; Input validation
         (asserts! (> amount u0) (err u106))
+        (asserts! (not (is-eq buyer tx-sender)) err-invalid-buyer)
+        (asserts! (not (is-eq description "")) err-invalid-description)
+        
         ;; Transfer tokens from seller to contract
         (try! (stx-transfer? (+ amount fee-amount) tx-sender (as-contract tx-sender)))
         
@@ -159,6 +166,7 @@
 (define-public (set-fee-collector (new-collector principal))
     (begin
         (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (not (is-eq new-collector contract-owner)) err-invalid-collector)
         (var-set fee-collector new-collector)
         (ok true)
     )
