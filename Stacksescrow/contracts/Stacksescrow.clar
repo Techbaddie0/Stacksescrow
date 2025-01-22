@@ -1,4 +1,4 @@
-;; TrustBridge: P2P Trading Escrow Smart Contract
+;; Stacksescrow: P2P Trading Escrow Smart Contract
 
 ;; Constants
 (define-constant contract-owner tx-sender)

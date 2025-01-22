@@ -1,4 +1,4 @@
-# TrustBridge: P2P Trading Escrow Smart Contract
+# Stacksescrow: P2P Trading Escrow Smart Contract
 
 A decentralized escrow system for peer-to-peer trading built on Stacks blockchain.
 
