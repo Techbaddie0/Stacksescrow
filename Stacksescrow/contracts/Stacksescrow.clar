@@ -11,14 +11,17 @@
 (define-constant err-invalid-buyer (err u108))
 (define-constant err-invalid-description (err u109))
 (define-constant err-invalid-collector (err u110))
+(define-constant err-invalid-arbitrator (err u111))
 
 ;; Status constants as fixed-length strings
 (define-constant STATUS-PENDING "pending")
 (define-constant STATUS-COMPLETED "completed")
 (define-constant STATUS-CANCELLED "cancelled")
+(define-constant STATUS-DISPUTED "disputed")
 
 ;; Data Variables
 (define-data-var escrow-fee uint u1) ;; 1% fee
+(define-data-var arbitrator principal contract-owner)
 
 ;; Trade Status
 (define-data-var fee-collector principal contract-owner)
@@ -38,7 +41,8 @@
         description: (string-ascii 100),
         status: (string-ascii 20),
         created-at: uint,
-        completed-at: uint
+        completed-at: uint,
+        dispute-reason: (optional (string-ascii 200))
     }
 )
 
@@ -80,7 +84,8 @@
                 description: description,
                 status: STATUS-PENDING,
                 created-at: current-height,
-                completed-at: u0
+                completed-at: u0,
+                dispute-reason: none
             }
         )
         
@@ -150,7 +155,76 @@
     )
 )
 
+;; Raise dispute (buyer only)
+(define-public (raise-dispute (trade-id uint) (reason (string-ascii 200)))
+    (let
+        (
+            (trade (unwrap! (get-trade trade-id) err-trade-not-found))
+        )
+        ;; Verify caller is the buyer
+        (asserts! (is-eq (get buyer trade) tx-sender) err-unauthorized)
+        ;; Verify trade is in pending state
+        (asserts! (is-eq (get status trade) STATUS-PENDING) err-invalid-state)
+        
+        ;; Update trade status to disputed
+        (map-set trades
+            { trade-id: trade-id }
+            (merge trade {
+                status: STATUS-DISPUTED,
+                dispute-reason: (some reason)
+            })
+        )
+        (ok true)
+    )
+)
+
+;; Resolve dispute (arbitrator only)
+(define-public (resolve-dispute (trade-id uint) (refund-to-buyer bool))
+    (let
+        (
+            (trade (unwrap! (get-trade trade-id) err-trade-not-found))
+        )
+        ;; Verify caller is the arbitrator
+        (asserts! (is-eq tx-sender (var-get arbitrator)) err-unauthorized)
+        ;; Verify trade is in disputed state
+        (asserts! (is-eq (get status trade) STATUS-DISPUTED) err-invalid-state)
+        
+        ;; Transfer funds based on resolution
+        (try! 
+            (begin
+                (map-set trades
+                    { trade-id: trade-id }
+                    (merge trade {
+                        status: STATUS-COMPLETED,
+                        completed-at: (get-block-height)
+                    })
+                )
+                (as-contract
+                    (stx-transfer? 
+                        (get amount trade)
+                        tx-sender
+                        (if refund-to-buyer
+                            (get buyer trade)
+                            (get seller trade))
+                    )
+                )
+            )
+        )
+        (ok true)
+    )
+)
+
 ;; Admin functions
+
+;; Set arbitrator
+(define-public (set-arbitrator (new-arbitrator principal))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (asserts! (not (is-eq new-arbitrator contract-owner)) err-invalid-arbitrator)
+        (var-set arbitrator new-arbitrator)
+        (ok true)
+    )
+)
 
 ;; Update escrow fee
 (define-public (set-escrow-fee (new-fee uint))
